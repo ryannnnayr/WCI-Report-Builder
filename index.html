@@ -1,0 +1,323 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Report Builder for WCI Projects</title><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script><style>:root{font-family:Arial,Helvetica,sans-serif;color:#203445;background:#f3f6f7}*{box-sizing:border-box}body{margin:0}main{max-width:980px;margin:28px auto;padding:0 18px 40px}header{background:white;border-bottom:4px solid #0a797a;padding:20px max(20px,calc((100vw - 940px)/2));display:flex;gap:20px;align-items:center}header img{max-width:200px;max-height:70px;object-fit:contain}h1{font-size:27px;margin:0}h2{font-size:19px;margin:0 0 20px}section{background:white;border:1px solid #dbe3e8;border-radius:12px;padding:24px;margin:18px 0;box-shadow:0 2px 9px #102f4410}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px}.field{display:flex;flex-direction:column;gap:7px}.wide{grid-column:1/-1}label,.label{font-size:14px;font-weight:650}input[type=text],input[type=date],select{width:100%;padding:11px;border:1px solid #bac8d1;border-radius:7px;font:inherit}.checks{display:flex;gap:20px;flex-wrap:wrap;padding:10px 0}.checks label{font-weight:400}input[type=checkbox]{accent-color:#087f80;transform:scale(1.1)}button{border:0;background:#087f80;color:white;padding:12px 20px;border-radius:7px;font-weight:700;cursor:pointer}button.secondary{background:#e5f0f1;color:#165458}button:disabled{opacity:.55;cursor:wait}.actions{display:flex;gap:12px;flex-wrap:wrap}.hint{font-size:12px;color:#60727e}.status{white-space:pre-wrap;margin:14px 0;color:#235b5d}.error{color:#b22929}footer{display:flex;justify-content:flex-end}#logoFallback{color:#087f80;font-size:24px;font-weight:800} @media(max-width:650px){.grid{grid-template-columns:1fr}header{flex-wrap:wrap}h1{font-size:23px}}</style></head><body><header><img src="logo.png" alt="Terraphase logo" onerror="this.style.display='none';document.getElementById('logoFallback').hidden=false"><span id="logoFallback" hidden>Terraphase</span><h1>Report Builder for WCI Projects</h1></header><main><section><h2>Import project information</h2><div class="field"><label for="sourcePdf">Open project information PDF</label><input type="file" id="sourcePdf" accept="application/pdf,.pdf"><div class="hint" id="importStatus"></div></div></section><section><h2>Project information</h2><div class="grid"><div class="field wide"><label for="project">What is the project name?</label><input id="project" type="text"></div><div class="field"><label for="sub">What is the Sub name?</label><input id="sub" type="text"></div><div class="field"><label for="pm">What is WCI PM?</label><input id="pm" type="text"></div><div class="field"><label for="sap">What is SAP number?</label><input id="sap" type="text"></div><div class="field"><label for="requestor">Requestor</label><input id="requestor" type="text"></div><div class="field wide"><label for="description">Project description</label><input id="description" type="text"></div><div class="field"><label for="city">City</label><input id="city" type="text"></div><div class="field"><label for="gps">GPS Coordinates</label><input id="gps" type="text"></div><div class="field"><label for="pmPhone">PM phone</label><input id="pmPhone" type="text"></div></div></section><section><h2>Sampling and analytical information</h2><div class="field"><span class="label">What site media sampled?</span><div class="checks"><label><input type="checkbox" id="soil"> Soil</label><label><input type="checkbox" id="concrete"> Concrete</label><label><input type="checkbox" id="asphalt"> Asphalt</label></div></div><div class="field"><span class="label">What analytical suites are needed?</span><div class="checks"><label><input type="checkbox" id="tph" checked> TPH</label><label><input type="checkbox" id="metals" checked> Metals</label><label><input type="checkbox" id="pcbs" checked> PCBs</label><label><input type="checkbox" id="vocs" checked> VOCs</label><label><input type="checkbox" id="svocs"> SVOCs</label></div></div><div class="grid"><div class="field"><label for="repDate">What is the date of the report?</label><div class="actions"><input id="repDate" type="date" style="flex:1"><button type="button" class="secondary" id="today">Today</button></div></div><div class="field"><label for="sampleDate">What was the day of sampling?</label><input id="sampleDate" type="date"></div><div class="field"><label for="photos">How many photos are needed?</label><select id="photos"><option>1</option><option>2</option><option>3</option><option>4</option></select></div></div></section><section><footer><button id="save">Complete and Save</button></footer></section><div class="status" id="status" role="status"></div></main><div style="max-width:980px;margin:0 auto 35px;padding:0 18px;text-align:center"><a href="pdfconvert.html" style="color:#087f80;font-weight:700;text-decoration:underline">PDF to PNG Crop Tool</a></div><script>
+'use strict';
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const $=id=>document.getElementById(id), val=id=>$(id).value.trim();
+const phones={'cem kamali':'(657) 922-5355','christine brendle':'(949) 939-4966','vik mathur':'(714) 728-7546'};
+const clean=s=>String(s??'').trim(); const safe=s=>clean(s).replace(/[\\/:*?"<>|]/g,'-').slice(0,140);
+function fmtDate(iso,mode='short'){if(!iso)return '';const [y,m,d]=iso.split('-').map(Number);if(!y||!m||!d)return iso;const date=new Date(y,m-1,d);return mode==='long'?date.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):`${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}/${y}`}
+function today(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};$('repDate').value=today();$('today').onclick=()=>{$('repDate').value=today()};
+$('pm').addEventListener('input',()=>{$('pmPhone').value=phones[val('pm').toLowerCase()]||''});
+function sentence(s){const text=clean(s);return text&&!text.endsWith('.')?text+'.':text}
+function set(id,v){if(v!==undefined&&v!==null&&clean(v))$(id).value=clean(v)}
+function parsePdfLines(lines,rows=[]){
+ const list=lines.map(clean).filter(Boolean);
+ const projectLine=list[2]||list.find(x=>/\bsub\b/i.test(x))||'';
+ if(projectLine){const project=projectLine.trim();set('project',project);const sm=projectLine.match(/^(.+?)\s+sub\b/i);if(sm)set('sub',sm[1]);}
+ // Read values to the right of table labels. PDF text extraction sometimes separates cells.
+ function field(re){
+  for(let i=0;i<rows.length;i++){
+   const row=rows[i],parts=row.parts||[];
+   for(let j=0;j<parts.length;j++){
+    const txt=clean(parts[j].s);if(!re.test(txt))continue;
+    let same=txt.replace(re,'').replace(/^[:\s-]+/,'').trim();
+    if(same)return same;
+    const right=parts.filter(q=>q.x>parts[j].x+25&&clean(q.s)).sort((a,b)=>a.x-b.x);
+    if(right.length)return clean(right.map(q=>q.s).join(' '));
+    const next=rows[i+1];if(next&&Math.abs(next.y-row.y)<28)return clean(next.parts.map(q=>q.s).join(' '));
+   }
+  }
+  for(let i=0;i<list.length;i++){const m=list[i].match(re);if(m)return clean(list[i].replace(re,'').replace(/^[:\s-]+/,''))||clean(list[i+1]);}
+  return '';
+ }
+ set('pm',field(/^WCI\s*PM\b\s*[:\-]?/i));
+ set('sap',field(/^SAP\s*\/\s*Work\s*Order\b\s*[:\-]?/i));
+ set('gps',field(/^GPS\s*Coordinates\b\s*[:\-]?/i));
+ set('description',sentence(field(/^Project\s*Description\b\s*[:\-]?/i).split(/Project will include:/i)[0].trim()));
+ const address=field(/^Address\b\s*[:\-]?/i);const city=address.match(/,\s*([^,]+?)\s*,\s*CA\b/i);if(city)set('city',city[1]);
+ // Requestor is below the left heading, not the right-hand Site Access Contact.
+ const requestRow=rows.find(r=>r.parts.some(p=>/^Requestor Information$/i.test(clean(p.s))));
+ if(requestRow){const ix=rows.indexOf(requestRow);const heading=requestRow.parts.find(p=>/^Requestor Information$/i.test(clean(p.s)));const below=rows.slice(ix+1).find(r=>r.y<requestRow.y-2&&r.parts.some(p=>p.x<heading.x+240&&/^[A-Za-z][A-Za-z .'-]+$/.test(clean(p.s))));if(below){const candidate=below.parts.filter(p=>p.x<heading.x+240).sort((a,b)=>a.x-b.x)[0];if(candidate)set('requestor',candidate.s)}}
+ if(!val('requestor')){const idx=list.findIndex(x=>/Requestor Information/i.test(x));if(idx>=0){const candidate=(list[idx+1]||'').split(/\s{2,}/)[0];if(candidate&&!/Site Access Contact/i.test(candidate))set('requestor',candidate)}}
+ $('pm').dispatchEvent(new Event('input'));
+}
+$('sourcePdf').addEventListener('change',async e=>{const f=e.target.files?.[0];if(!f)return;try{
+ $('importStatus').textContent='Reading PDF...';const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await f.arrayBuffer())}).promise;
+ const lines=[],allRows=[];
+ for(let n=1;n<=pdf.numPages;n++){
+  const pg=await pdf.getPage(n),tc=await pg.getTextContent();const rows=[];
+  for(const item of tc.items){if(!clean(item.str))continue;const y=Math.round(item.transform[5]*2)/2;let row=rows.find(r=>Math.abs(r.y-y)<=2);if(!row){row={y,parts:[]};rows.push(row)}row.parts.push({x:item.transform[4],s:item.str})}
+  rows.sort((a,b)=>b.y-a.y);for(const row of rows){row.parts.sort((a,b)=>a.x-b.x);lines.push(row.parts.map(x=>x.s).join(' ').replace(/\s+/g,' ').trim());allRows.push(row)}
+ }
+ parsePdfLines(lines,allRows);await pdf.destroy();$('importStatus').textContent=`Imported ${f.name}. Please review the fields.`;
+ }catch(err){$('importStatus').textContent='Unable to read this PDF: '+err.message}
+});
+function values(){const media=['soil','concrete','asphalt'].filter(id=>$(id).checked);const join=a=>a.length<3?a.join(' and '):a.slice(0,-1).join(', ')+', and '+a.at(-1);const d={'project name':val('project'),'sub name':val('sub'),'wci pm':val('pm'),'pm':val('pm'),'pm phone':val('pmPhone'),'sap':val('sap'),'req':val('requestor'),'pd':sentence(val('description')),'city':val('city'),'gps':val('gps'),'media1':media[0]||'','media2':media[1]||'','media3':media[2]||'','media':join(media),'tph':+$('tph').checked,'metals':+$('metals').checked,'pcbs':+$('pcbs').checked,'vocs':+$('vocs').checked,'svocs':+$('svocs').checked,'rep date':fmtDate(val('repDate')),'sample date':fmtDate(val('sampleDate')),'photo date':fmtDate(val('sampleDate'),'long'),'photos':Number(val('photos'))};return d}
+function replaceTokens(s,d){return String(s).replace(/\[([^\]]+)\]/g,(all,k)=>Object.prototype.hasOwnProperty.call(d,k.trim().toLowerCase())?String(d[k.trim().toLowerCase()]):all)}
+function removeSoilText(s,soil){return String(s).replace(/\[soil start\]([\s\S]*?)\[soil end\]/gi,(_,body)=>soil?body:'')}
+function processText(s,d){return replaceTokens(removeSoilText(s,!!$('soil').checked),d)}
+async function getRoot(name){if(location.protocol==='file:')throw Error('Open this page through your website server so the root template files can be read.');const r=await fetch(new URL(encodeURIComponent(name),location.href),{cache:'no-store'});if(!r.ok)throw Error(`${name} unavailable (${r.status}). Publish this file in the same website folder.`);return new Uint8Array(await r.arrayBuffer())}
+const SHEET_NS='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+const nodes=(el,name)=>Array.from(el.getElementsByTagNameNS(SHEET_NS,name));
+function xmlEscapeText(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\r/g,'&#13;')}
+function xmlUnescapeText(s){return String(s).replace(/&#x([\da-f]+);|&#(\d+);|&(amp|lt|gt|quot|apos);/gi,(_,hex,num,named)=>hex?String.fromCodePoint(parseInt(hex,16)):num?String.fromCodePoint(Number(num)):({amp:'&',lt:'<',gt:'>',quot:'"',apos:"'"})[named.toLowerCase()]);}
+function analyticalText(s,d){
+ let result=replaceTokens(s,d);
+ // Remove the full explanatory sentence before removing its /SVOCs fragment.
+ if(!Number(d.vocs))result=result.replace(/VOCs\/SVOCs:\s*DTSC HERO HHRA values for commercial\/industrial soil are denoted by \*, all other values are EPA industrial RSLs/gi,'').replace(/VOCs:\s*Volatile Organic Compounds/gi,'');
+ if(!Number(d.svocs))result=result.replace(/\/SVOCs|SVOCs:\s*Semi-Volatile Organic Compounds/gi,'');
+ return result;
+}
+function replaceTextGroup(group,d,analytical){
+ const re=/(<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>)([^<]*)(<\/(?:[A-Za-z_][\w.-]*:)?t>)/g;
+ const entries=[...group.matchAll(re)].map(m=>({match:m,text:xmlUnescapeText(m[2])}));
+ if(!entries.length)return group;
+ const original=entries.map(e=>e.text).join('');
+ const transform=s=>analytical?analyticalText(s,d):replaceTokens(s,d);
+ if(transform(original)===original)return group;
+ // Compute replacements in original character coordinates. Rich-text runs retain
+ // their original tags and formatting; inserted text inherits the opening run.
+ const edits=[];
+ const token=/\[[^\]]+\]/g;let m;
+ while((m=token.exec(original))){const replacement=replaceTokens(m[0],d);if(replacement!==m[0])edits.push({start:m.index,end:m.index+m[0].length,replacement});}
+ if(analytical){
+  const patterns=[];
+  if(!Number(d.vocs))patterns.push(/VOCs\/SVOCs:\s*DTSC HERO HHRA values for commercial\/industrial soil are denoted by \*, all other values are EPA industrial RSLs/gi,/VOCs:\s*Volatile Organic Compounds/gi);
+  if(!Number(d.svocs))patterns.push(/\/SVOCs|SVOCs:\s*Semi-Volatile Organic Compounds/gi);
+  for(const pattern of patterns)while((m=pattern.exec(original))){const end=m.index+m[0].length;if(!edits.some(e=>m.index<e.end&&end>e.start))edits.push({start:m.index,end,replacement:''});}
+ }
+ let offset=0,index=0;
+ return group.replace(re,(all,open,body,close)=>{
+  const text=entries[index++].text,start=offset,end=offset+text.length;offset=end;let output='',cursor=start;
+  for(const edit of edits.slice().sort((a,b)=>a.start-b.start)){
+   if(edit.end<=start||edit.start>=end)continue;
+   output+=text.slice(cursor-start,Math.max(cursor,edit.start)-start);
+   if(edit.start>=start)output+=edit.replacement;
+   cursor=Math.max(cursor,Math.min(end,edit.end));
+  }
+  output+=text.slice(cursor-start);
+  if(output===text)return all;
+  if(/^\s|\s$/.test(output)&&! /xml:space=/.test(open))open=open.slice(0,-1)+' xml:space="preserve">';
+  return open+xmlEscapeText(output)+close;
+ });
+}
+function replaceXmlText(xml,d,analytical){
+ // Process a whole shared/inline string or drawing paragraph at once so a token
+ // split across runs is still matched. Other text-only XML nodes include headers.
+ let result=xml.replace(/<((?:[\w.-]+:)?(?:si|is|p))\b[^>]*>[\s\S]*?<\/\1>/g,group=>replaceTextGroup(group,d,analytical));
+ result=result.replace(/(>)([^<>]+)(<)/g,(all,open,text,close)=>{
+  const raw=xmlUnescapeText(text),next=analytical?analyticalText(raw,d):replaceTokens(raw,d);
+  return next===raw?all:open+xmlEscapeText(next)+close;
+ });
+ return result;
+}
+function colNum(s){let n=0;for(const ch of s.toUpperCase())n=n*26+ch.charCodeAt(0)-64;return n}
+function colName(n){let s='';while(n>0){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)}return s}
+function parseCellRef(ref){const m=String(ref).match(/^(\$?)([A-Z]+)(\$?)(\d+)$/i);return m?{c:colNum(m[2]),r:+m[4],ac:m[1],ar:m[3]}:null}
+function changeRef(ref,removedCols,removedRows,changeColumns=true){
+ const p=parseCellRef(ref);if(!p)return ref;
+ if(removedRows.some(([lo,hi])=>p.r>=lo&&p.r<=hi))return null;
+ const shiftedRow=p.r-removedRows.filter(([lo,hi])=>hi<p.r).reduce((n,[lo,hi])=>n+hi-lo+1,0);
+ // Notes below the analytical table keep every original cell, including cells
+ // beneath a removed sample column. Row 181 is the first possible footer row.
+ if(!changeColumns||p.r>180)return `${p.ac}${colName(p.c)}${p.ar}${shiftedRow}`;
+ if(removedCols.includes(p.c))return null;
+ return `${p.ac}${colName(p.c-removedCols.filter(c=>c<p.c).length)}${p.ar}${shiftedRow}`;
+}
+function changeRange(range,removedCols,removedRows){
+ const [aa,bb]=range.split(':'),a=parseCellRef(aa),b=parseCellRef(bb||aa);if(!a||!b)return range;
+ const availableRows=[];for(let r=a.r;r<=b.r;r++)if(!removedRows.some(([lo,hi])=>r>=lo&&r<=hi))availableRows.push(r);
+ if(!availableRows.length)return null;
+ const r1=availableRows[0],r2=availableRows.at(-1);
+ const availableCols=[];for(let c=a.c;c<=b.c;c++)if(r1>180||!removedCols.includes(c))availableCols.push(c);
+ if(!availableCols.length)return null;
+ const start=changeRef(`${a.ac}${colName(availableCols[0])}${a.ar}${r1}`,removedCols,removedRows),end=changeRef(`${b.ac}${colName(availableCols.at(-1))}${b.ar}${r2}`,removedCols,removedRows);
+ return start===end?start:start+':'+end;
+}
+function sampleColumns(dom,shared,d){
+ const header=nodes(dom,'row').find(r=>Number(r.getAttribute('r'))===4);if(!header)return null;
+ const cols=[];let found=false;
+ for(const cell of nodes(header,'c')){
+  const ref=parseCellRef(cell.getAttribute('r'));if(!ref)continue;
+  const value=cell.getAttribute('t')==='s'?shared[Number(nodes(cell,'v')[0]?.textContent)]||'':nodes(cell,'t').map(t=>t.textContent).join('');
+  if(/AC1|C1|HA[12]/i.test(value))found=true;
+  if((!d.media.toLowerCase().includes('asphalt')&&/AC1/i.test(value))||(!d.media.toLowerCase().includes('concrete')&&/\bC1\b/i.test(value))||(!d.media.toLowerCase().includes('soil')&&/HA[12]/i.test(value)))cols.push(ref.c);
+ }
+ return found?[...new Set(cols)].sort((a,b)=>a-b):null;
+}
+function shiftFormula(formula,removedCols,removedRows){
+ // Strings and external/sheet-qualified references remain untouched. Unqualified
+ // cell and range references on this worksheet follow the deleted cells.
+ return formula.replace(/"(?:[^"]|"")*"|(?:'(?:[^']|'')+'|\[[^\]]+\][\w.]+|[A-Za-z_][\w.]*)!\$?[A-Z]+\$?\d+(?::\$?[A-Z]+\$?\d+)?|\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?/gi,(ref,offset,whole)=>{
+  if(whole.slice(offset+ref.length).trimStart().startsWith('('))return ref;
+  if(ref.startsWith('"')||ref.includes('!'))return ref;
+  return (ref.includes(':')?changeRange(ref,removedCols,removedRows):changeRef(ref,removedCols,removedRows))||'#REF!';
+ });
+}
+function editAnalyticalSheet(xml,d,shared=[]){
+ const dom=new DOMParser().parseFromString(xml,'application/xml');
+ if(dom.getElementsByTagName('parsererror').length)throw Error('Invalid analytical worksheet XML');
+ const removedCols=sampleColumns(dom,shared,d);if(removedCols===null)return xml;
+ const removedRows=[];if(!Number(d.vocs))removedRows.push([40,114]);if(!Number(d.svocs))removedRows.push([115,180]);
+ if(!removedCols.length&&!removedRows.length)return xml;
+ const sheetData=nodes(dom,'sheetData')[0];
+ for(const row of nodes(sheetData,'row')){
+  const r=Number(row.getAttribute('r'));
+  if(removedRows.some(([lo,hi])=>r>=lo&&r<=hi)){sheetData.removeChild(row);continue;}
+  row.setAttribute('r',String(parseCellRef(changeRef('A'+r,[],removedRows,false)).r));
+  for(const cell of nodes(row,'c')){const next=changeRef(cell.getAttribute('r'),removedCols,removedRows);if(!next){row.removeChild(cell);continue;}cell.setAttribute('r',next);}
+ }
+ for(const merge of nodes(dom,'mergeCell')){const next=changeRange(merge.getAttribute('ref'),removedCols,removedRows);if(!next)merge.parentNode.removeChild(merge);else merge.setAttribute('ref',next);}
+ for(const container of nodes(dom,'mergeCells'))container.setAttribute('count',String(nodes(container,'mergeCell').length));
+ for(const tag of ['autoFilter','conditionalFormatting','dataValidation','hyperlink'])for(const element of nodes(dom,tag))for(const attr of ['ref','sqref'])if(element.hasAttribute(attr)){
+  const next=element.getAttribute(attr).split(/\s+/).map(r=>changeRange(r,removedCols,removedRows)).filter(Boolean).join(' ');
+  if(next)element.setAttribute(attr,next);else element.parentNode?.removeChild(element);
+ }
+ for(const tag of ['f','formula','formula1','formula2'])for(const f of nodes(dom,tag)){
+  if(f.hasAttribute('ref')){const next=changeRange(f.getAttribute('ref'),removedCols,removedRows);if(next)f.setAttribute('ref',next);else f.removeAttribute('ref');}
+  if(f.textContent)f.textContent=shiftFormula(f.textContent,removedCols,removedRows);
+ }
+ for(const selection of nodes(dom,'selection'))for(const attr of ['activeCell','sqref'])if(selection.hasAttribute(attr))selection.setAttribute(attr,selection.getAttribute(attr).split(/\s+/).map(r=>changeRange(r,removedCols,removedRows)).filter(Boolean).join(' ')||'A1');
+ for(const rowBreak of nodes(dom,'rowBreaks'))for(const brk of nodes(rowBreak,'brk')){const r=Number(brk.getAttribute('id'));const next=changeRef('A'+r,[],removedRows,false);if(next)brk.setAttribute('id',String(parseCellRef(next).r));else rowBreak.removeChild(brk);}
+ const refs=nodes(sheetData,'c').map(c=>parseCellRef(c.getAttribute('r'))).filter(Boolean);
+ const dimension=nodes(dom,'dimension')[0];if(dimension)dimension.setAttribute('ref',`A1:${colName(Math.max(1,...refs.map(p=>p.c)))}${Math.max(1,...refs.map(p=>p.r))}`);
+ return new XMLSerializer().serializeToString(dom);
+}
+async function editWorkbook(data,d,analytical=false){
+ const zip=await JSZip.loadAsync(data),sharedFile=zip.file('xl/sharedStrings.xml');let shared=[];
+ if(sharedFile){const dom=new DOMParser().parseFromString(await sharedFile.async('string'),'application/xml');shared=nodes(dom,'si').map(si=>nodes(si,'t').map(t=>t.textContent).join(''));}
+ for(const path of Object.keys(zip.files).filter(p=>/\.xml$/i.test(p)&&!zip.files[p].dir)){
+  const original=await zip.file(path).async('string');let updated=original;
+  if(analytical&&/^xl\/worksheets\/[^/]+\.xml$/i.test(path))updated=editAnalyticalSheet(updated,d,shared);
+  updated=replaceXmlText(updated,d,analytical);
+  if(updated!==original)zip.file(path,updated);
+ }
+ return new Uint8Array(await zip.generateAsync({type:'uint8array',compression:'DEFLATE'}));
+}
+
+function fieldDefaultSize(field,size){
+ const rewrite=da=>{
+  const original=da||'/Helv 0 Tf 0 g';
+  return /\/[^\s]+\s+[\d.+-]+\s+Tf\b/.test(original)?original.replace(/(\/[^\s]+)\s+[\d.+-]+\s+Tf\b/g,`$1 ${size} Tf`):original+` /Helv ${size} Tf`;
+ };
+ field.acroField.setDefaultAppearance(rewrite(field.acroField.getDefaultAppearance()));
+ for(const widget of field.acroField.getWidgets()){
+  const entry=widget.dict.lookupMaybe(PDFLib.PDFName.of('DA'),PDFLib.PDFString,PDFLib.PDFHexString);
+  // Write Auto explicitly at widget level, including widgets with no prior DA.
+  // A viewer must not inherit a fixed size from another appearance setting.
+  const appearance=entry?entry.decodeText():field.acroField.getDefaultAppearance();
+  widget.dict.set(PDFLib.PDFName.of('DA'),PDFLib.PDFString.of(rewrite(appearance)));
+ }
+}
+function registerFormFont(doc,form,fields,font){
+ const name=PDFLib.PDFName.of(font.name),DR=PDFLib.PDFName.of('DR'),Font=PDFLib.PDFName.of('Font');
+ const register=(dict,create=false)=>{
+  let resources=dict.lookupMaybe(DR,PDFLib.PDFDict);
+  if(!resources&&!create)return;
+  if(!resources){resources=doc.context.obj({});dict.set(DR,resources);}
+  let fonts=resources.lookupMaybe(Font,PDFLib.PDFDict);
+  if(!fonts){fonts=doc.context.obj({});resources.set(Font,fonts);}
+  fonts.set(name,font.ref);
+ };
+ // Appearance generation writes /Helvetica into DA. Make that name available
+ // to PDF viewers when editing or regenerating fields, not only in AP streams.
+ register(form.acroForm.dict,true);
+ for(const field of fields){register(field.acroField.dict);for(const widget of field.acroField.getWidgets())register(widget.dict);}
+}
+function fittedMediaAppearance(field,widget,font){
+ const box=widget.getRectangle(),border=widget.getBorderStyle()?.getWidth()||0;
+ const rotation=widget.getAppearanceCharacteristics()?.getRotation()||0;
+ const sideways=Math.abs(rotation%180)===90;
+ const bounds={x:border+1,y:border+1,width:Math.max(.1,(sideways?box.height:box.width)-2*(border+1)),height:Math.max(.1,(sideways?box.width:box.height)-2*(border+1))};
+ const text=field.getText()||'',layout=field.isMultiline()?PDFLib.layoutMultilineText:PDFLib.layoutSinglelineText;
+ const options={font,alignment:field.getAlignment(),bounds};
+ let size=layout(text,{...options,fontSize:0}).fontSize;
+ // The library's multiline Auto heuristic can accept a word wider than the
+ // field. Measure the actual layout and shrink until every line fits.
+ const fits=candidate=>{
+  const result=layout(text,{...options,fontSize:candidate}),lines=result.lines||[result.line];
+  return lines.every(line=>line.width<=bounds.width+.01&&line.x>=bounds.x-.01&&line.y>=bounds.y-.01&&line.y+line.height<=bounds.y+bounds.height+.01);
+ };
+ if(!fits(size)){
+  let low=0,high=size;
+  for(let i=0;i<24;i++){const mid=(low+high)/2;if(fits(mid))low=mid;else high=mid;}
+  size=Math.max(.001,low);
+ }
+ fieldDefaultSize(field,size);
+ // The fixed value here belongs only to the rendered appearance. The saved
+ // field and every widget are restored to true Auto (0 Tf) after generation.
+ return PDFLib.defaultTextFieldAppearanceProvider(field,widget,font);
+}
+function isMaterial(name){return /^material(?:\s*row)?\s*\d*$/i.test(name.trim());}
+function soilFieldValues(fields,soil){
+ // Apply paired markers across editable fields as well as within a single field.
+ const original=fields.map(f=>f.getText()||''),joined=original.join('\u0000');
+ const opening=(joined.match(/\[soil start\]/gi)||[]).length,closing=(joined.match(/\[soil end\]/gi)||[]).length;
+ if(opening!==closing)throw Error('The PDF contains unmatched soil section markers. Check the report template.');
+ let inside=false;
+ return original.map(text=>{
+  let out='',cursor=0;const markers=/\[soil (start|end)\]/gi;let m;
+  while((m=markers.exec(text))){
+   if(soil||!inside)out+=text.slice(cursor,m.index);
+   if(m[1].toLowerCase()==='start'){if(inside)throw Error('The PDF contains nested soil markers. Check the report template.');inside=true;}
+   else{if(!inside)throw Error('A soil end marker appears before its start marker. Check the report template.');inside=false;}
+   cursor=m.index+m[0].length;
+  }
+  if(soil||!inside)out+=text.slice(cursor);return out;
+ });
+}
+async function editPdf(data,d){
+ const doc=await PDFLib.PDFDocument.load(data,{ignoreEncryption:false}),form=doc.getForm(),fields=form.getFields();
+ const aliases={'report date':'rep date','sapwo number':'sap','requester':'req','requestor':'req','wci project manager':'pm','wci pm':'pm','wci pm phone':'pm phone','project description':'pd','material':'media','materialrow2':'media','materialrow3':'media','material4':'media','materialrow4':'media','materialrow5':'media1','materialrow6':'media2','materialrow7':'media3','filename':'file name','file name':'file name'};
+ // Page order and top-to-bottom widget positions determine cross-field sections.
+ const pageRefs=doc.getPages().map(p=>p.ref.toString());
+ const textFields=fields.filter(f=>f instanceof PDFLib.PDFTextField).sort((a,b)=>{
+  const aw=a.acroField.getWidgets()[0],bw=b.acroField.getWidgets()[0];
+  const ai=aw? pageRefs.indexOf(aw.P()?.toString()):0,bi=bw?pageRefs.indexOf(bw.P()?.toString()):0;
+  return ai-bi||((bw?.getRectangle().y||0)-(aw?.getRectangle().y||0))||((aw?.getRectangle().x||0)-(bw?.getRectangle().x||0));
+ });
+ const soilTexts=soilFieldValues(textFields,!!$('soil').checked),updatedText=new Set();let replaced=0;
+ for(const f of fields){
+  const name=f.getName(),direct=name.match(/^\[([^\]]+)\]$/),normalized=name.trim().toLowerCase();
+  const key=direct?direct[1].trim().toLowerCase():(aliases[normalized]||normalized),match=Object.prototype.hasOwnProperty.call(d,key);
+  // Analytical PCBs is an input flag, never a value for the PCB report column.
+  // Keep PCB-column values and appearances; only their final font size becomes Auto.
+  if(/^pcbs?(?:\s*\d+)?$/i.test(normalized)||/^pcb\s*impacted(?:\s*\d+)?$/i.test(normalized))continue;
+  try{
+   if(f instanceof PDFLib.PDFTextField){
+    const old=f.getText()||'',base=soilTexts[textFields.indexOf(f)];
+    let next=replaceTokens(base,d);
+    if(next===old&&match)next=String(d[key]);
+    if(next!==old){f.setText(next);updatedText.add(f);replaced++;}
+    // Auto means 0 Tf in /DA for every text field, including Material.
+    fieldDefaultSize(f,0);
+    if(isMaterial(name))updatedText.add(f);
+   }else if(f instanceof PDFLib.PDFCheckBox&&match){Number(d[key])?f.check():f.uncheck();replaced++;}
+   else if((f instanceof PDFLib.PDFDropdown||f instanceof PDFLib.PDFOptionList)&&match){
+    const target=f.getOptions().find(v=>v.toLowerCase()===String(d[key]).toLowerCase());
+    if(target===undefined)throw Error(`No option matches ${d[key]}`);f.select(target);replaced++;
+   }
+  }catch(error){throw Error(`Unable to update PDF field “${name}”: ${error.message}`);}
+ }
+ if(!replaced)throw Error('No matching editable PDF fields found. The report template needs fillable AcroForm fields containing mapped placeholders.');
+ const font=await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+ // Regenerate only changed text fields. Unmapped table columns retain their
+ // original text and appearance streams. Then restore Auto on all text fields.
+ registerFormFont(doc,form,fields,font);
+ for(const f of updatedText)f.updateAppearances(font,isMaterial(f.getName())?fittedMediaAppearance:undefined);
+ for(const f of fields)if(f instanceof PDFLib.PDFTextField)fieldDefaultSize(f,0);
+ return await doc.save({updateFieldAppearances:false});
+}
+async function chooseDestination(){
+ if(window.showDirectoryPicker)return {directory:await window.showDirectoryPicker({mode:'readwrite'})};
+ if(window.showSaveFilePicker)return {file:await window.showSaveFilePicker({suggestedName:'WCI_Report_Output.zip',types:[{description:'Report output ZIP',accept:{'application/zip':['.zip']}}]})};
+ return {};
+}
+async function saveFiles(files,destination={}){
+ if(destination.directory){for(const [name,bytes]of files){const handle=await destination.directory.getFileHandle(name,{create:true});const stream=await handle.createWritable();await stream.write(bytes);await stream.close();}return;}
+ const zip=new JSZip();for(const [name,bytes]of files)zip.file(name,bytes);const blob=await zip.generateAsync({type:'blob'});
+ if(destination.file){const stream=await destination.file.createWritable();await stream.write(blob);await stream.close();return;}
+ const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download='WCI_Report_Output.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
+
+$('save').onclick=async()=>{const button=$('save'),status=$('status');button.disabled=true;status.classList.remove('error');try{status.textContent='Preparing output files...';const d=values();if(!d['project name']||!d['sub name']||!d.sap)throw Error('Enter project name, Sub name, and SAP number.');const pdfName=`Edit_${d['sub name']} Sub ${d.sap} WCI Report ${d['rep date'].replaceAll('/','-')}.pdf`;d['file name']=safe(pdfName);const destination=await chooseDestination();const inputs=['Edit_[sub name] Sub [sap] WCI Report [rep date].pdf',`Photos_${d.photos}.xlsx`,'Figure.xlsx','Analytical_Table.xlsx'];const loaded=await Promise.all(inputs.map(getRoot));const outputs=[];outputs.push([safe(pdfName),await editPdf(loaded[0],d)]);outputs.push([`Photos_${d.photos}_${safe(d['sub name'])}.xlsx`,await editWorkbook(loaded[1],d)]);outputs.push([`Figure_${safe(d['sub name'])}.xlsx`,await editWorkbook(loaded[2],d)]);outputs.push([`Analytical_Table_${safe(d['sub name'])}.xlsx`,await editWorkbook(loaded[3],d,true)]);status.textContent='Saving output files...';await saveFiles(outputs,destination);status.textContent='Completed. Four files generated.'}catch(err){status.classList.add('error');status.textContent=err.name==='AbortError'?'Save cancelled.':err.message||String(err)}finally{button.disabled=false}};
+</script></body></html>
